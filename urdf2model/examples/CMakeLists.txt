@@ -412,3 +412,13 @@ target_link_libraries( indyrp2_example
        pinocchio::pinocchio
                          )
 
+## mabi_mobile
+add_executable( mabi_mobile_example
+                mabi_mobile_example.cpp
+              )
+target_link_libraries( mabi_mobile_example
+
+       ${PROJECT_NAME}
+       ${CASADI_LIB}
+       pinocchio::pinocchio
+                     )

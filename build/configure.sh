@@ -10,6 +10,7 @@
   # export CASADI_DIRECTORY="/home/alejandro/phd_software/casadi_source/casadi" # 352
   # export CASADI_DIRECTORY="/home/alejandro/phd_software/casadi_source/build-python/install_python"
   # export CASADI_DIRECTORY="/home/alejandro/phd_software/casadi_source/casadi_353"
+  export CASADI_DIRECTORY="/usr/local/include/casadi/"
 
   export PINOCCHIO_INCLUDE="/opt/openrobots/include/"
   export EIGEN_INCLUDE="/usr/include/eigen3"
