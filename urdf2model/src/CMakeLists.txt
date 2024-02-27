@@ -9,6 +9,7 @@ LIST(APPEND ${PROJECT_NAME}_SOURCES
     ${SRC_DIR}/functions/forward_kinematics.cpp
     ${SRC_DIR}/functions/code_generation.cpp
     ${SRC_DIR}/functions/robot_expressions.cpp
+    ${SRC_DIR}/robot_dynamics.cpp
     )
 
 # include directories (as the -I flag in gcc)
@@ -26,6 +27,8 @@ target_link_libraries(${PROJECT_NAME}
                       boost_system
                       urdfdom_model
                       ${CASADI_LIB}
+                      rbdl
+                      rbdl_urdfreader
                     )
 
 # Install

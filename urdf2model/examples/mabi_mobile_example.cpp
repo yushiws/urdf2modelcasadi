@@ -1,6 +1,7 @@
 #include <casadi/casadi.hpp>
 
 #include "model_interface.hpp"
+#include "robot_dynamics.hpp"
 
 namespace Eigen {
 typedef Matrix<casadi::SXElem, Eigen::Dynamic, Eigen::Dynamic> MatrixXs;
@@ -52,10 +53,11 @@ int main() {
     casadi::SX x_sx = casadi::SX::sym(
         "x", n_q);  // x, y, z, q_w, q_x, q_y, q_z, q_1, q_2, ... , q_6
     casadi::SX xdot_sx = casadi::SX::sym("xdot", n_q);
-    casadi::SX u_sx = casadi::SX::sym("u", n_joints);
-    casadi::SX z_sx = casadi::SX::sym("z", 12);
-    casadi::SX p_sx = casadi::SX::sym("p", 0);
-    casadi::SX multiplier = casadi::SX::sym("multiplier", n_q + 12);
+    casadi::SX u_sx = casadi::SX::sym(
+        "u", n_joints);  // wheel_l, wheel_r, q_1, q_2, ... , q_6
+    casadi::SX z_sx = casadi::SX::sym("z", 5);
+    casadi::SX p_sx = casadi::SX::sym("p", 7);
+    casadi::SX multiplier = casadi::SX::sym("multiplier", n_q + 5);
 
     // Calculate xdot
     Eigen::MatrixXs mat_eigen;
@@ -94,23 +96,43 @@ int main() {
     // Calculate z
     casadi::Function fk_pos_ee =
         robot_model.forward_kinematics("position", "EE_FORCETORQUESENSOR");
+    std::vector<casadi::SXElem> x_reorder = x_sx.get_elements();
+    x_reorder.insert(x_reorder.begin() + 7, x_reorder[3]);
+    x_reorder.erase(x_reorder.begin() + 3);
+    casadi::SX pos_err_sx =
+        fk_pos_ee(casadi::SXVector{casadi::SX(x_reorder)})[0] -
+        p_sx(casadi::Slice(0, 3), 0);
+    std::vector<casadi::SXElem> pos_err_vector = pos_err_sx.get_elements();
+
     casadi::Function fk_rot_ee =
         robot_model.forward_kinematics("rotation", "EE_FORCETORQUESENSOR");
-    casadi::SX pos_sx = fk_pos_ee(std::vector<casadi::SX>{x_sx})[0];
-    casadi::SX rot_sx = fk_rot_ee(std::vector<casadi::SX>{x_sx})[0];
-    std::vector<casadi::SXElem> pos_vector = pos_sx.get_elements();
-    std::vector<casadi::SXElem> rot_vector = rot_sx.get_elements();
+    casadi::SX rot_sx = fk_rot_ee(casadi::SXVector{casadi::SX(x_reorder)})[0];
+    Eigen::MatrixXs rot_ref_eigen =
+        Eigen::Quaternions(p_sx.get_elements()[3], p_sx.get_elements()[4],
+                           p_sx.get_elements()[5], p_sx.get_elements()[6])
+            .toRotationMatrix();
+    casadi::SX rot_ref_sx(std::vector<casadi::SXElem>(
+        rot_ref_eigen.data(),
+        rot_ref_eigen.data() + rot_ref_eigen.rows() * rot_ref_eigen.cols()));
+    rot_ref_sx = casadi::SX::reshape(rot_ref_sx, 3, 3);
+    casadi::SXElem trace_rot_err = sum((rot_sx * rot_ref_sx).get_elements());
+    casadi::SXElem theta_err = acos(0.5 * (trace_rot_err - 1));
+
+    std::vector<casadi::SXElem> q(x_reorder.end() - 6, x_reorder.end());
+    casadi::SX jac_q = jacobian(pos_err_sx, casadi::SX(q));
+    casadi::SXElem manipulability =
+        1. / sqrt(det(mtimes(jac_q, jac_q.T()))).get_elements()[0];
 
     // Concatenate xdot, z as f_expl
     std::vector<casadi::SXElem> f_expl(
         xdot_eigen.data(),
         xdot_eigen.data() + xdot_eigen.rows() * xdot_eigen.cols());
-    f_expl.insert(f_expl.end(), pos_vector.begin(), pos_vector.end());
-    f_expl.insert(f_expl.end(), rot_vector.begin(), rot_vector.end());
+    f_expl.insert(f_expl.end(), pos_err_vector.begin(), pos_err_vector.end());
+    f_expl.push_back(theta_err);
+    f_expl.push_back(manipulability);
 
     // Calculate f_impl and jacobian
-    casadi::SX xdot_z_sx =
-        casadi::SX::vertcat(std::vector<casadi::SX>{xdot_sx, z_sx});
+    casadi::SX xdot_z_sx = casadi::SX::vertcat(casadi::SXVector{xdot_sx, z_sx});
     casadi::SX f_impl = xdot_z_sx - f_expl;
 
     casadi::SX jac_x = jacobian(f_impl, x_sx);
@@ -119,7 +141,7 @@ int main() {
     casadi::SX jac_z = jacobian(f_impl, z_sx);
 
     casadi::SX x_xdot_z_u_sx =
-        casadi::SX::vertcat(std::vector<casadi::SX>{x_sx, xdot_sx, z_sx, u_sx});
+        casadi::SX::vertcat(casadi::SXVector{x_sx, xdot_sx, z_sx, u_sx});
     casadi::SX adjoint = jtimes(f_impl, x_xdot_z_u_sx, multiplier, true);
     casadi::SX hess = jacobian(adjoint, x_xdot_z_u_sx);
 
@@ -149,15 +171,82 @@ int main() {
     // Evaluate a kinematics or dynamics function
     // ---------------------------------------------------------------------
     // Test a function with numerical values
-    std::vector<double> x_vec = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    std::vector<double> x_vec = {0.23,  0.354, -0.52, 1.,    0.,   0.,  0.,
+                                 0.243, 1.32,  0.32,  1.386, 3.29, 2.10};
     std::vector<double> xdot_vec = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    std::vector<double> u_vec = {1, 1, 0, 0, 0, 0, 0, 0};
-    std::vector<double> z_vec = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    std::vector<double> p_vec = {};
+    std::vector<double> u_vec = {54.23, -11.12, 2.43, 0.41,
+                                 1.72,  0.62,   3.12, 0.128};
+    std::vector<double> z_vec = {0, 0, 0, 0, 0};
+    std::vector<double> p_vec = {0, 0, 0, 0.7071, 0, 0.7071, 0};
     // Evaluate the function with a casadi::DMVector containing q_vec as input
     casadi::DM impl_res =
         impl_dae_fun(casadi::DMVector{x_vec, xdot_vec, u_vec, z_vec, p_vec})[0];
-    std::cout << "Function result: " << impl_res << std::endl;
+    std::cout << "Func result: " << impl_res << std::endl;
+
+    // Calculate by RBDL
+    std::shared_ptr<robot_dynamics::RobotDynamics> robot_model_;
+    robot_model_.reset(new robot_dynamics::RobotDynamics(
+        urdf_filename, {"EE_FORCETORQUESENSOR"}));
+    robot_model_->Reset();
+    Eigen::VectorXd joint(6);
+    joint << x_vec[7], x_vec[8], x_vec[9], x_vec[10], x_vec[11], x_vec[12];
+    robot_model_->SetJointPos(joint);
+    robot_model_->SetTorsoPosOri(
+        Eigen::Vector3d({x_vec[0], x_vec[1], x_vec[2]}),
+        Eigen::Quaterniond(x_vec[3], x_vec[4], x_vec[5], x_vec[6]));
+
+    Eigen::MatrixXd joint_mat_;
+    joint_mat_.setZero(12, 8);
+    joint_mat_.block<6, 6>(6, 2).setIdentity();
+    joint_mat_.block<1, 2>(0, 0) << wheel_radius / 2., wheel_radius / 2.;
+    joint_mat_.block<1, 2>(5, 0) << -wheel_radius / wheel_distance,
+        wheel_radius / wheel_distance;
+    joint_mat_.block<3, 2>(0, 0) =
+        Eigen::Quaterniond(x_vec[3], x_vec[4], x_vec[5], x_vec[6])
+            .toRotationMatrix() *
+        joint_mat_.block<3, 2>(0, 0);
+    joint_mat_.block<3, 2>(3, 0) =
+        Eigen::Quaterniond(x_vec[3], x_vec[4], x_vec[5], x_vec[6])
+            .toRotationMatrix() *
+        joint_mat_.block<3, 2>(3, 0);
+
+    Eigen::MatrixXd qdot_rbdl =
+        joint_mat_ * Eigen::Map<Eigen::MatrixXd>(u_vec.data(), u_vec.size(), 1);
+    double omega_x_rbdl = qdot_rbdl.coeff(3, 0);
+    double omega_y_rbdl = qdot_rbdl.coeff(4, 0);
+    double omega_z_rbdl = qdot_rbdl.coeff(5, 0);
+    Eigen::MatrixXd omega_operator_rbdl(4, 4);
+    omega_operator_rbdl << 0, -omega_x_rbdl, -omega_y_rbdl, -omega_z_rbdl,
+        omega_x_rbdl, 0, omega_z_rbdl, -omega_y_rbdl, omega_y_rbdl,
+        -omega_z_rbdl, 0, omega_x_rbdl, omega_z_rbdl, omega_y_rbdl,
+        -omega_x_rbdl, 0;
+    Eigen::MatrixXd quaternion_rbdl(4, 1);
+    quaternion_rbdl << x_vec[3], x_vec[4], x_vec[5], x_vec[6];
+    Eigen::MatrixXd quaternion_dot =
+        0.5 * omega_operator_rbdl * quaternion_rbdl;
+    std::cout << "RBDL result: [";
+    for (int i = 0; i < 3; i++)
+        std::cout << -1. * qdot_rbdl.coeff(i, 0) << ", ";
+    for (int i = 0; i < 4; i++)
+        std::cout << -1. * quaternion_dot.coeff(i, 0) << ", ";
+    for (int i = 6; i < 12; i++)
+        std::cout << -1. * qdot_rbdl.coeff(i, 0) << ", ";
+
+    Eigen::Matrix3d ee_rot = robot_model_->EndEffectorOri(0).toRotationMatrix();
+    Eigen::Matrix3d ee_rot_ref =
+        Eigen::Quaterniond(p_vec[3], p_vec[4], p_vec[5], p_vec[6])
+            .toRotationMatrix();
+    for (int i = 0; i < 3; i++)
+        std::cout << -1. * (robot_model_->EndEffectorPos(0)[i] - p_vec[i])
+                  << ", ";
+
+    std::cout << -1. *
+                     acos(0.5 * ((ee_rot.transpose() * ee_rot_ref).trace() - 1))
+              << ", ";
+    Eigen::MatrixXd ee_jac =
+        robot_model_->EndEffectorJacobian(0).block<3, 6>(3, 6);
+    std::cout << -1. / sqrt((ee_jac * ee_jac.transpose()).determinant()) << "]"
+              << std::endl;
 
     // ---------------------------------------------------------------------
     // Generate (or save) a function

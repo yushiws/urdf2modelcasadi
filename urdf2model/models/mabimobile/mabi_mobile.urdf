@@ -106,7 +106,7 @@
       </material>
     </visual>
     <inertial>
-      <origin rpy="0 0 1.57079327" xyz="0.0 0.0 -0.033"/>
+      <origin rpy="0 0 0" xyz="0.0 0.0 -0.033"/>
       <mass value="2.5"/>
       <inertia ixx="0.0" ixy="0.0" ixz="0.0" iyy="0.0" iyz="0.0" izz="0.0"/>
     </inertial>
@@ -446,7 +446,7 @@
       </material>
     </visual>
     <inertial>
-      <origin rpy="0 0 1.57079327" xyz="0.0 0.0 -0.017"/>
+      <origin rpy="0 0 0" xyz="0.0 0.0 -0.017"/>
       <mass value="0.23"/>
       <inertia ixx="0.0" ixy="0.0" ixz="0.0" iyy="0.0" iyz="0.0" izz="0.0"/>
     </inertial>
@@ -580,7 +580,7 @@
   <link name="GRIPPER_right_coupler">
     <inertial>
       <mass value="0.05"/>
-      <origin rpy="-1.7 0 0" xyz="0 0.0 0.025"/>
+      <origin rpy="0 0 0" xyz="0 0.0 0.025"/>
       <inertia ixx="1.92708333333e-05" ixy="0" ixz="0" iyy="5.41666666667e-06" iyz="0" izz="2.13541666667e-05"/>
     </inertial>
     <visual>
@@ -660,7 +660,7 @@
   <link name="GRIPPER_right_spring_link">
     <inertial>
       <mass value="0.05"/>
-      <origin rpy="-0.7068 0 0" xyz="0 0.018 0.018"/>
+      <origin rpy="0 0 0" xyz="0 0.018 0.018"/>
       <inertia ixx="1.92708333333e-05" ixy="0" ixz="0" iyy="2.42708333333e-05" iyz="0" izz="8.33333333333e-06"/>
     </inertial>
     <visual>
@@ -710,7 +710,7 @@
   <link name="GRIPPER_left_coupler">
     <inertial>
       <mass value="0.05"/>
-      <origin rpy="-1.7 0 0" xyz="0 0.0 0.025"/>
+      <origin rpy="0 0 0" xyz="0 0.0 0.025"/>
       <inertia ixx="1.92708333333e-05" ixy="0" ixz="0" iyy="5.41666666667e-06" iyz="0" izz="2.13541666667e-05"/>
     </inertial>
     <visual>
@@ -790,7 +790,7 @@
   <link name="GRIPPER_left_spring_link">
     <inertial>
       <mass value="0.05"/>
-      <origin rpy="-0.7068 0 0" xyz="0 0.018 0.018"/>
+      <origin rpy="0 0 0" xyz="0 0.018 0.018"/>
       <inertia ixx="1.92708333333e-05" ixy="0" ixz="0" iyy="2.42708333333e-05" iyz="0" izz="8.33333333333e-06"/>
     </inertial>
     <visual>
