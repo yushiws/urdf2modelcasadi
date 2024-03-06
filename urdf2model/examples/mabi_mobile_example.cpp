@@ -3,6 +3,8 @@
 #include "model_interface.hpp"
 #include "robot_dynamics.hpp"
 
+#define ARM_Q 7
+
 namespace Eigen {
 typedef Matrix<casadi::SXElem, Eigen::Dynamic, Eigen::Dynamic> MatrixXs;
 typedef Quaternion<casadi::SXElem> Quaternions;
@@ -51,18 +53,19 @@ int main() {
 
     // Define symbol
     casadi::SX x_sx = casadi::SX::sym(
-        "x", n_q);  // x, y, z, q_w, q_x, q_y, q_z, q_1, q_2, ... , q_6
+        "x", n_q);  // x, y, z, q_w, q_x, q_y, q_z, q_1, q_2, ... , q_7
     casadi::SX xdot_sx = casadi::SX::sym("xdot", n_q);
     casadi::SX u_sx = casadi::SX::sym(
-        "u", n_joints);  // wheel_l, wheel_r, q_1, q_2, ... , q_6
-    casadi::SX z_sx = casadi::SX::sym("z", 5);
-    casadi::SX p_sx = casadi::SX::sym("p", 7);
+        "u", n_joints);  // wheel_l, wheel_r, q_1, q_2, ... , q_7
+    casadi::SX z_sx =
+        casadi::SX::sym("z", 5);  // x, y, z, theta, manipulability
+    casadi::SX p_sx = casadi::SX::sym("p", 7);  // x, y, z, q_w, q_x, q_y, q_z
     casadi::SX multiplier = casadi::SX::sym("multiplier", n_q + 5);
 
     // Calculate xdot
     Eigen::MatrixXs mat_eigen;
-    mat_eigen.setZero(12, 8);
-    mat_eigen.block<6, 6>(6, 2).setIdentity();
+    mat_eigen.setZero(6 + ARM_Q, 2 + ARM_Q);
+    mat_eigen.block<ARM_Q, ARM_Q>(6, 2).setIdentity();
     mat_eigen.block<1, 2>(0, 0) << wheel_radius / 2., wheel_radius / 2.;
     mat_eigen.block<1, 2>(5, 0) << -wheel_radius / wheel_distance,
         wheel_radius / wheel_distance;
@@ -91,11 +94,11 @@ int main() {
     Eigen::MatrixXs xdot_eigen(n_q, 1);
     xdot_eigen.block<3, 1>(0, 0) = qdot_eigen.block<3, 1>(0, 0);
     xdot_eigen.block<4, 1>(3, 0) = 0.5 * omega_operator * quaternion_eigen;
-    xdot_eigen.block<6, 1>(7, 0) = qdot_eigen.block<6, 1>(6, 0);
+    xdot_eigen.block<ARM_Q, 1>(7, 0) = qdot_eigen.block<ARM_Q, 1>(6, 0);
 
     // Calculate z
     casadi::Function fk_pos_ee =
-        robot_model.forward_kinematics("position", "EE_FORCETORQUESENSOR");
+        robot_model.forward_kinematics("position", "link7");
     std::vector<casadi::SXElem> x_reorder = x_sx.get_elements();
     x_reorder.insert(x_reorder.begin() + 7, x_reorder[3]);
     x_reorder.erase(x_reorder.begin() + 3);
@@ -105,7 +108,7 @@ int main() {
     std::vector<casadi::SXElem> pos_err_vector = pos_err_sx.get_elements();
 
     casadi::Function fk_rot_ee =
-        robot_model.forward_kinematics("rotation", "EE_FORCETORQUESENSOR");
+        robot_model.forward_kinematics("rotation", "link7");
     casadi::SX rot_sx = fk_rot_ee(casadi::SXVector{casadi::SX(x_reorder)})[0];
     Eigen::MatrixXs rot_ref_eigen =
         Eigen::Quaternions(p_sx.get_elements()[3], p_sx.get_elements()[4],
@@ -118,7 +121,7 @@ int main() {
     casadi::SXElem trace_rot_err = sum((rot_sx * rot_ref_sx).get_elements());
     casadi::SXElem theta_err = acos(0.5 * (trace_rot_err - 1));
 
-    std::vector<casadi::SXElem> q(x_reorder.end() - 6, x_reorder.end());
+    std::vector<casadi::SXElem> q(x_reorder.end() - ARM_Q, x_reorder.end());
     casadi::SX jac_q = jacobian(pos_err_sx, casadi::SX(q));
     casadi::SXElem manipulability =
         1. / sqrt(det(mtimes(jac_q, jac_q.T()))).get_elements()[0];
@@ -171,10 +174,10 @@ int main() {
     // Evaluate a kinematics or dynamics function
     // ---------------------------------------------------------------------
     // Test a function with numerical values
-    std::vector<double> x_vec = {0.23,  0.354, -0.52, 1.,    0.,   0.,  0.,
-                                 0.243, 1.32,  0.32,  1.386, 3.29, 2.10};
-    std::vector<double> xdot_vec = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    std::vector<double> u_vec = {54.23, -11.12, 2.43, 0.41,
+    std::vector<double> x_vec = {0.23,  0.354, -0.52, 1.,    0.,   0.,   0.,
+                                 0.243, 1.32,  0.32,  1.386, 3.29, 2.10, 0.42};
+    std::vector<double> xdot_vec = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    std::vector<double> u_vec = {54.23, -11.12, 2.43, 0.41, 1.37,
                                  1.72,  0.62,   3.12, 0.128};
     std::vector<double> z_vec = {0, 0, 0, 0, 0};
     std::vector<double> p_vec = {0, 0, 0, 0.7071, 0, 0.7071, 0};
@@ -185,8 +188,8 @@ int main() {
 
     // Calculate by RBDL
     std::shared_ptr<robot_dynamics::RobotDynamics> robot_model_;
-    robot_model_.reset(new robot_dynamics::RobotDynamics(
-        urdf_filename, {"EE_FORCETORQUESENSOR"}));
+    robot_model_.reset(
+        new robot_dynamics::RobotDynamics(urdf_filename, {"link7"}));
     robot_model_->Reset();
     Eigen::VectorXd joint(6);
     joint << x_vec[7], x_vec[8], x_vec[9], x_vec[10], x_vec[11], x_vec[12];
@@ -196,8 +199,8 @@ int main() {
         Eigen::Quaterniond(x_vec[3], x_vec[4], x_vec[5], x_vec[6]));
 
     Eigen::MatrixXd joint_mat_;
-    joint_mat_.setZero(12, 8);
-    joint_mat_.block<6, 6>(6, 2).setIdentity();
+    joint_mat_.setZero(6 + ARM_Q, 2 + ARM_Q);
+    joint_mat_.block<ARM_Q, ARM_Q>(6, 2).setIdentity();
     joint_mat_.block<1, 2>(0, 0) << wheel_radius / 2., wheel_radius / 2.;
     joint_mat_.block<1, 2>(5, 0) << -wheel_radius / wheel_distance,
         wheel_radius / wheel_distance;
@@ -229,7 +232,7 @@ int main() {
         std::cout << -1. * qdot_rbdl.coeff(i, 0) << ", ";
     for (int i = 0; i < 4; i++)
         std::cout << -1. * quaternion_dot.coeff(i, 0) << ", ";
-    for (int i = 6; i < 12; i++)
+    for (int i = 6; i < 6 + ARM_Q; i++)
         std::cout << -1. * qdot_rbdl.coeff(i, 0) << ", ";
 
     Eigen::Matrix3d ee_rot = robot_model_->EndEffectorOri(0).toRotationMatrix();
