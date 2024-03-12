@@ -98,7 +98,7 @@ int main() {
 
     // Calculate z
     casadi::Function fk_pos_ee =
-        robot_model.forward_kinematics("position", "link7");
+        robot_model.forward_kinematics("position", "flange");
     std::vector<casadi::SXElem> x_reorder = x_sx.get_elements();
     x_reorder.insert(x_reorder.begin() + 7, x_reorder[3]);
     x_reorder.erase(x_reorder.begin() + 3);
@@ -108,7 +108,7 @@ int main() {
     std::vector<casadi::SXElem> pos_err_vector = pos_err_sx.get_elements();
 
     casadi::Function fk_rot_ee =
-        robot_model.forward_kinematics("rotation", "link7");
+        robot_model.forward_kinematics("rotation", "flange");
     casadi::SX rot_sx = fk_rot_ee(casadi::SXVector{casadi::SX(x_reorder)})[0];
     Eigen::MatrixXs rot_ref_eigen =
         Eigen::Quaternions(p_sx.get_elements()[3], p_sx.get_elements()[4],
@@ -189,7 +189,7 @@ int main() {
     // Calculate by RBDL
     std::shared_ptr<robot_dynamics::RobotDynamics> robot_model_;
     robot_model_.reset(
-        new robot_dynamics::RobotDynamics(urdf_filename, {"link7"}));
+        new robot_dynamics::RobotDynamics(urdf_filename, {"flange"}));
     robot_model_->Reset();
     Eigen::VectorXd joint(6);
     joint << x_vec[7], x_vec[8], x_vec[9], x_vec[10], x_vec[11], x_vec[12];
