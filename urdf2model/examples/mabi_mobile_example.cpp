@@ -6,8 +6,10 @@
 #define ARM_Q 7
 
 namespace Eigen {
+typedef Matrix<casadi::SXElem, 3, 1> Vector3s;
 typedef Matrix<casadi::SXElem, Eigen::Dynamic, Eigen::Dynamic> MatrixXs;
 typedef Quaternion<casadi::SXElem> Quaternions;
+typedef AngleAxis<casadi::SXElem> AngleAxiss;
 }  // namespace Eigen
 
 int main() {
@@ -52,56 +54,41 @@ int main() {
     double wheel_distance = 0.58;
 
     // Define symbol
-    casadi::SX x_sx = casadi::SX::sym(
-        "x", n_q);  // x, y, z, q_w, q_x, q_y, q_z, q_1, q_2, ... , q_7
-    casadi::SX xdot_sx = casadi::SX::sym("xdot", n_q);
+    casadi::SX x_sx =
+        casadi::SX::sym("x", n_q - 3);  // x, y, z, yaw, q_1, q_2, ... , q_7
+    casadi::SX xdot_sx = casadi::SX::sym("xdot", n_q - 3);
     casadi::SX u_sx = casadi::SX::sym(
         "u", n_joints);  // wheel_l, wheel_r, q_1, q_2, ... , q_7
     casadi::SX z_sx =
         casadi::SX::sym("z", 5);  // x, y, z, theta, manipulability
     casadi::SX p_sx = casadi::SX::sym("p", 7);  // x, y, z, q_w, q_x, q_y, q_z
-    casadi::SX multiplier = casadi::SX::sym("multiplier", n_q + 5);
+    casadi::SX multiplier = casadi::SX::sym("multiplier", n_q + 2);
 
     // Calculate xdot
     Eigen::MatrixXs mat_eigen;
-    mat_eigen.setZero(6 + ARM_Q, 2 + ARM_Q);
-    mat_eigen.block<ARM_Q, ARM_Q>(6, 2).setIdentity();
+    mat_eigen.setZero(4 + ARM_Q, 2 + ARM_Q);
+    mat_eigen.block<ARM_Q, ARM_Q>(4, 2).setIdentity();
     mat_eigen.block<1, 2>(0, 0) << wheel_radius / 2., wheel_radius / 2.;
-    mat_eigen.block<1, 2>(5, 0) << -wheel_radius / wheel_distance,
+    mat_eigen.block<1, 2>(3, 0) << -wheel_radius / wheel_distance,
         wheel_radius / wheel_distance;
     mat_eigen.block<3, 2>(0, 0) =
-        Eigen::Quaternions(x_sx.get_elements()[3], x_sx.get_elements()[4],
-                           x_sx.get_elements()[5], x_sx.get_elements()[6])
+        Eigen::AngleAxiss(x_sx.get_elements()[3], Eigen::Vector3s(0, 0, 1))
             .toRotationMatrix() *
         mat_eigen.block<3, 2>(0, 0);
-    mat_eigen.block<3, 2>(3, 0) =
-        Eigen::Quaternions(x_sx.get_elements()[3], x_sx.get_elements()[4],
-                           x_sx.get_elements()[5], x_sx.get_elements()[6])
-            .toRotationMatrix() *
-        mat_eigen.block<3, 2>(3, 0);
     Eigen::MatrixXs u_eigen =
         Eigen::Map<Eigen::MatrixXs>(u_sx.get_elements().data(), n_joints, 1);
-    Eigen::MatrixXs qdot_eigen = mat_eigen * u_eigen;
-    casadi::SXElem omega_x = qdot_eigen.coeff(3, 0);
-    casadi::SXElem omega_y = qdot_eigen.coeff(4, 0);
-    casadi::SXElem omega_z = qdot_eigen.coeff(5, 0);
-    Eigen::MatrixXs omega_operator(4, 4);
-    omega_operator << 0, -omega_x, -omega_y, -omega_z, omega_x, 0, omega_z,
-        -omega_y, omega_y, -omega_z, 0, omega_x, omega_z, omega_y, -omega_x, 0;
-    Eigen::MatrixXs quaternion_eigen(4, 1);
-    quaternion_eigen << x_sx.get_elements()[3], x_sx.get_elements()[4],
-        x_sx.get_elements()[5], x_sx.get_elements()[6];
-    Eigen::MatrixXs xdot_eigen(n_q, 1);
-    xdot_eigen.block<3, 1>(0, 0) = qdot_eigen.block<3, 1>(0, 0);
-    xdot_eigen.block<4, 1>(3, 0) = 0.5 * omega_operator * quaternion_eigen;
-    xdot_eigen.block<ARM_Q, 1>(7, 0) = qdot_eigen.block<ARM_Q, 1>(6, 0);
+    Eigen::MatrixXs xdot_eigen = mat_eigen * u_eigen;
 
     // Calculate z
     casadi::Function fk_pos_ee =
         robot_model.forward_kinematics("position", "flange");
+    Eigen::Quaternions quat = Eigen::Quaternions(
+        Eigen::AngleAxiss(x_sx.get_elements()[3], Eigen::Vector3s(0, 0, 1)));
+    std::vector<casadi::SXElem> base_rot(
+        {quat.x(), quat.y(), quat.z(), quat.w()});
     std::vector<casadi::SXElem> x_reorder = x_sx.get_elements();
-    x_reorder.insert(x_reorder.begin() + 7, x_reorder[3]);
     x_reorder.erase(x_reorder.begin() + 3);
+    x_reorder.insert(x_reorder.begin() + 3, base_rot.begin(), base_rot.end());
     casadi::SX pos_err_sx =
         fk_pos_ee(casadi::SXVector{casadi::SX(x_reorder)})[0] -
         p_sx(casadi::Slice(0, 3), 0);
@@ -174,9 +161,9 @@ int main() {
     // Evaluate a kinematics or dynamics function
     // ---------------------------------------------------------------------
     // Test a function with numerical values
-    std::vector<double> x_vec = {0.23,  0.354, -0.52, 1.,    0.,   0.,   0.,
-                                 0.243, 1.32,  0.32,  1.386, 3.29, 2.10, 0.42};
-    std::vector<double> xdot_vec = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    std::vector<double> x_vec = {0.23, 0.354, -0.52, 1.43, 0.243, 1.32,
+                                 0.32, 1.386, 3.29,  2.10, 0.42};
+    std::vector<double> xdot_vec = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     std::vector<double> u_vec = {54.23, -11.12, 2.43, 0.41, 1.37,
                                  1.72,  0.62,   3.12, 0.128};
     std::vector<double> z_vec = {0, 0, 0, 0, 0};
@@ -191,48 +178,30 @@ int main() {
     robot_model_.reset(
         new robot_dynamics::RobotDynamics(urdf_filename, {"flange"}));
     robot_model_->Reset();
-    Eigen::VectorXd joint(6);
-    joint << x_vec[7], x_vec[8], x_vec[9], x_vec[10], x_vec[11], x_vec[12];
+    Eigen::VectorXd joint(ARM_Q);
+    joint << x_vec[4], x_vec[5], x_vec[6], x_vec[7], x_vec[8], x_vec[9],
+        x_vec[10];
     robot_model_->SetJointPos(joint);
     robot_model_->SetTorsoPosOri(
         Eigen::Vector3d({x_vec[0], x_vec[1], x_vec[2]}),
-        Eigen::Quaterniond(x_vec[3], x_vec[4], x_vec[5], x_vec[6]));
+        Eigen::Quaterniond(
+            Eigen::AngleAxisd(x_vec[3], Eigen::Vector3d(0, 0, 1))));
 
     Eigen::MatrixXd joint_mat_;
-    joint_mat_.setZero(6 + ARM_Q, 2 + ARM_Q);
-    joint_mat_.block<ARM_Q, ARM_Q>(6, 2).setIdentity();
+    joint_mat_.setZero(4 + ARM_Q, 2 + ARM_Q);
+    joint_mat_.block<ARM_Q, ARM_Q>(4, 2).setIdentity();
     joint_mat_.block<1, 2>(0, 0) << wheel_radius / 2., wheel_radius / 2.;
-    joint_mat_.block<1, 2>(5, 0) << -wheel_radius / wheel_distance,
+    joint_mat_.block<1, 2>(3, 0) << -wheel_radius / wheel_distance,
         wheel_radius / wheel_distance;
     joint_mat_.block<3, 2>(0, 0) =
-        Eigen::Quaterniond(x_vec[3], x_vec[4], x_vec[5], x_vec[6])
+        Eigen::AngleAxisd(x_vec[3], Eigen::Vector3d(0, 0, 1))
             .toRotationMatrix() *
         joint_mat_.block<3, 2>(0, 0);
-    joint_mat_.block<3, 2>(3, 0) =
-        Eigen::Quaterniond(x_vec[3], x_vec[4], x_vec[5], x_vec[6])
-            .toRotationMatrix() *
-        joint_mat_.block<3, 2>(3, 0);
 
     Eigen::MatrixXd qdot_rbdl =
         joint_mat_ * Eigen::Map<Eigen::MatrixXd>(u_vec.data(), u_vec.size(), 1);
-    double omega_x_rbdl = qdot_rbdl.coeff(3, 0);
-    double omega_y_rbdl = qdot_rbdl.coeff(4, 0);
-    double omega_z_rbdl = qdot_rbdl.coeff(5, 0);
-    Eigen::MatrixXd omega_operator_rbdl(4, 4);
-    omega_operator_rbdl << 0, -omega_x_rbdl, -omega_y_rbdl, -omega_z_rbdl,
-        omega_x_rbdl, 0, omega_z_rbdl, -omega_y_rbdl, omega_y_rbdl,
-        -omega_z_rbdl, 0, omega_x_rbdl, omega_z_rbdl, omega_y_rbdl,
-        -omega_x_rbdl, 0;
-    Eigen::MatrixXd quaternion_rbdl(4, 1);
-    quaternion_rbdl << x_vec[3], x_vec[4], x_vec[5], x_vec[6];
-    Eigen::MatrixXd quaternion_dot =
-        0.5 * omega_operator_rbdl * quaternion_rbdl;
     std::cout << "RBDL result: [";
-    for (int i = 0; i < 3; i++)
-        std::cout << -1. * qdot_rbdl.coeff(i, 0) << ", ";
-    for (int i = 0; i < 4; i++)
-        std::cout << -1. * quaternion_dot.coeff(i, 0) << ", ";
-    for (int i = 6; i < 6 + ARM_Q; i++)
+    for (int i = 0; i < 4 + ARM_Q; i++)
         std::cout << -1. * qdot_rbdl.coeff(i, 0) << ", ";
 
     Eigen::Matrix3d ee_rot = robot_model_->EndEffectorOri(0).toRotationMatrix();
