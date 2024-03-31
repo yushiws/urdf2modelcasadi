@@ -105,8 +105,7 @@ int main() {
         rot_ref_eigen.data(),
         rot_ref_eigen.data() + rot_ref_eigen.rows() * rot_ref_eigen.cols()));
     rot_ref_sx = casadi::SX::reshape(rot_ref_sx, 3, 3);
-    casadi::SXElem trace_rot_err = sum((rot_sx * rot_ref_sx).get_elements());
-    casadi::SXElem theta_err = acos(0.5 * (trace_rot_err - 1));
+    casadi::SXElem rot_err = 3. - sum((rot_sx * rot_ref_sx).get_elements());
 
     std::vector<casadi::SXElem> q(x_reorder.end() - ARM_Q, x_reorder.end());
     casadi::SX jac_q = jacobian(pos_err_sx, casadi::SX(q));
@@ -118,7 +117,7 @@ int main() {
         xdot_eigen.data(),
         xdot_eigen.data() + xdot_eigen.rows() * xdot_eigen.cols());
     f_expl.insert(f_expl.end(), pos_err_vector.begin(), pos_err_vector.end());
-    f_expl.push_back(theta_err);
+    f_expl.push_back(rot_err);
     f_expl.push_back(manipulability);
 
     // Calculate f_impl and jacobian
@@ -174,6 +173,7 @@ int main() {
     std::cout << "Func result: " << impl_res << std::endl;
 
     // Calculate by RBDL
+    std::vector<double> rbdl_res;
     std::shared_ptr<robot_dynamics::RobotDynamics> robot_model_;
     robot_model_.reset(
         new robot_dynamics::RobotDynamics(urdf_filename, {"flange"}));
@@ -200,25 +200,24 @@ int main() {
 
     Eigen::MatrixXd qdot_rbdl =
         joint_mat_ * Eigen::Map<Eigen::MatrixXd>(u_vec.data(), u_vec.size(), 1);
-    std::cout << "RBDL result: [";
     for (int i = 0; i < 4 + ARM_Q; i++)
-        std::cout << -1. * qdot_rbdl.coeff(i, 0) << ", ";
+        rbdl_res.push_back(-1. * qdot_rbdl.coeff(i, 0));
 
     Eigen::Matrix3d ee_rot = robot_model_->EndEffectorOri(0).toRotationMatrix();
     Eigen::Matrix3d ee_rot_ref =
         Eigen::Quaterniond(p_vec[3], p_vec[4], p_vec[5], p_vec[6])
             .toRotationMatrix();
     for (int i = 0; i < 3; i++)
-        std::cout << -1. * (robot_model_->EndEffectorPos(0)[i] - p_vec[i])
-                  << ", ";
+        rbdl_res.push_back(-1. *
+                           (robot_model_->EndEffectorPos(0)[i] - p_vec[i]));
 
-    std::cout << -1. *
-                     acos(0.5 * ((ee_rot.transpose() * ee_rot_ref).trace() - 1))
-              << ", ";
+    rbdl_res.push_back(-1. * (3. - (ee_rot.transpose() * ee_rot_ref).trace()));
+
     Eigen::MatrixXd ee_jac =
         robot_model_->EndEffectorJacobian(0).block<3, 6>(3, 6);
-    std::cout << -1. / sqrt((ee_jac * ee_jac.transpose()).determinant()) << "]"
-              << std::endl;
+    rbdl_res.push_back(-1. / sqrt((ee_jac * ee_jac.transpose()).determinant()));
+
+    std::cout << "RBDL result: " << casadi::DM(rbdl_res) << std::endl;
 
     // ---------------------------------------------------------------------
     // Generate (or save) a function
