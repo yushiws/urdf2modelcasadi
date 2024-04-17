@@ -54,15 +54,17 @@ int main() {
     double wheel_distance = 0.58;
 
     // Define symbol
-    casadi::SX x_sx =
-        casadi::SX::sym("x", n_q - 3);  // x, y, z, yaw, q_1, q_2, ... , q_7
-    casadi::SX xdot_sx = casadi::SX::sym("xdot", n_q - 3);
-    casadi::SX u_sx = casadi::SX::sym(
-        "u", n_joints);  // wheel_l, wheel_r, q_1, q_2, ... , q_7
-    casadi::SX z_sx =
-        casadi::SX::sym("z", 5);  // x, y, z, theta, manipulability
-    casadi::SX p_sx = casadi::SX::sym("p", 7);  // x, y, z, q_w, q_x, q_y, q_z
-    casadi::SX multiplier = casadi::SX::sym("multiplier", n_q + 2);
+    casadi::SX x_sx = casadi::SX::sym("x", 4 + ARM_Q);
+    // x, y, z, yaw, q_1, ... , q_7
+    casadi::SX xdot_sx = casadi::SX::sym("xdot", 4 + ARM_Q);
+    // dx, dy, dz, dyaw, dq_1, ... , dq_7
+    casadi::SX u_sx = casadi::SX::sym("u", 2 + ARM_Q);
+    // v_l, v_r, dq_1, dq_2, ... , dq_7
+    casadi::SX z_sx = casadi::SX::sym("z", 7);
+    // x, y, z, theta, manipulability, x_base, y_base
+    casadi::SX p_sx = casadi::SX::sym("p", 9);
+    // x, y, z, q_w, q_x, q_y, q_z, x_base, y_base
+    casadi::SX multiplier = casadi::SX::sym("multiplier", 11 + ARM_Q);
 
     // Calculate xdot
     Eigen::MatrixXs mat_eigen;
@@ -112,6 +114,10 @@ int main() {
     casadi::SXElem manipulability =
         1. / sqrt(det(mtimes(jac_q, jac_q.T()))).get_elements()[0];
 
+    std::vector<casadi::SXElem> base_err =
+        (x_sx(casadi::Slice(0, 2), 0) - p_sx(casadi::Slice(7, 9), 0))
+            .get_elements();
+
     // Concatenate xdot, z as f_expl
     std::vector<casadi::SXElem> f_expl(
         xdot_eigen.data(),
@@ -119,6 +125,7 @@ int main() {
     f_expl.insert(f_expl.end(), pos_err_vector.begin(), pos_err_vector.end());
     f_expl.push_back(rot_err);
     f_expl.push_back(manipulability);
+    f_expl.insert(f_expl.end(), base_err.begin(), base_err.end());
 
     // Calculate f_impl and jacobian
     casadi::SX xdot_z_sx = casadi::SX::vertcat(casadi::SXVector{xdot_sx, z_sx});
@@ -165,8 +172,8 @@ int main() {
     std::vector<double> xdot_vec = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     std::vector<double> u_vec = {54.23, -11.12, 2.43, 0.41, 1.37,
                                  1.72,  0.62,   3.12, 0.128};
-    std::vector<double> z_vec = {0, 0, 0, 0, 0};
-    std::vector<double> p_vec = {0, 0, 0, 0.7071, 0, 0.7071, 0};
+    std::vector<double> z_vec = {0, 0, 0, 0, 0, 0, 0};
+    std::vector<double> p_vec = {0, 0, 0, 0.7071, 0, 0.7071, 0, 0, 0};
     // Evaluate the function with a casadi::DMVector containing q_vec as input
     casadi::DM impl_res =
         impl_dae_fun(casadi::DMVector{x_vec, xdot_vec, u_vec, z_vec, p_vec})[0];
@@ -216,6 +223,9 @@ int main() {
     Eigen::MatrixXd ee_jac =
         robot_model_->EndEffectorJacobian(0).block<3, 6>(3, 6);
     rbdl_res.push_back(-1. / sqrt((ee_jac * ee_jac.transpose()).determinant()));
+
+    rbdl_res.push_back(-1. * (x_vec[0] - p_vec[7]));
+    rbdl_res.push_back(-1. * (x_vec[1] - p_vec[8]));
 
     std::cout << "RBDL result: " << casadi::DM(rbdl_res) << std::endl;
 
