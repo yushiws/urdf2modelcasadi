@@ -1,5 +1,7 @@
 #include <casadi/casadi.hpp>
+#include <fstream>
 
+#include "esdf_map.hpp"
 #include "model_interface.hpp"
 #include "robot_dynamics.hpp"
 
@@ -164,6 +166,82 @@ int main() {
         casadi::SXVector{hess});
 
     // ---------------------------------------------------------------------
+    // Set functions for collision avoidance constraints
+    // ---------------------------------------------------------------------
+    Eigen::Vector2d origin, map_size;
+    origin << -1., -1.5;
+    map_size << 3., 3.;
+    double resolution = 0.01;
+    fiesta::ESDFMap esdf_map(origin, resolution, map_size);
+
+    // set occupancy for some positions
+    Eigen::Vector2d pos;
+    std::vector<std::pair<double, double>> vp;
+    for (double y = -1.5; y <= -0.5; y += 0.01)
+        vp.push_back(std::make_pair(1, y));
+    for (double y = 0.5; y <= 1.5; y += 0.01)
+        vp.push_back(std::make_pair(1, y));
+    for (double l = 0; l <= 1; l += 0.01)
+        vp.push_back(std::make_pair(1 - 0.5 * sqrt(3) * l, 0.5 - 0.5 * l));
+
+    // insert
+    for (auto iter = vp.begin(); iter != vp.end(); iter++) {
+        pos << iter->first, iter->second;
+        esdf_map.SetOccupancy(pos, 1);
+        esdf_map.UpdateESDF();
+    }
+
+    std::vector<std::vector<double>> grid;
+    std::vector<double> xgrid, ygrid;
+    for (int i = 0; i < esdf_map.grid_size_(0); ++i)
+        xgrid.push_back((i + 0.5) * esdf_map.resolution_ + esdf_map.origin_(0));
+    for (int i = 0; i < esdf_map.grid_size_(1); ++i)
+        ygrid.push_back((i + 0.5) * esdf_map.resolution_ + esdf_map.origin_(1));
+    grid.push_back(xgrid);
+    grid.push_back(ygrid);
+
+    std::vector<double> values;
+    for (int idx = 0; idx < esdf_map.grid_total_size_; idx++) {
+        Eigen::Vector2i vox(idx % esdf_map.grid_size_(0),
+                            idx / esdf_map.grid_size_(0));
+        double dist = esdf_map.GetDistance(vox);
+        values.push_back(dist);
+    }
+    casadi::Function esdf_fun =
+        casadi::interpolant("esdf", "linear", grid, values);
+
+    // Define symbol
+    casadi::MX x_mx = casadi::MX::sym("x", 4 + ARM_Q);
+    casadi::MX u_mx = casadi::MX::sym("u", 2 + ARM_Q);
+    casadi::MX z_mx = casadi::MX::sym("z", 7);
+    casadi::MX p_mx = casadi::MX::sym("p", 9);
+    casadi::MX lam_h = casadi::MX::sym("lam", 1);
+    casadi::MX h_mx = esdf_fun(x_mx(casadi::Slice(0, 2), 0))[0];
+    casadi::MX h_jac_x = jacobian(h_mx, x_mx);
+    casadi::MX h_jac_u = jacobian(h_mx, u_mx);
+    casadi::MX h_jac_uxt =
+        casadi::MX::vertcat(casadi::MXVector{h_jac_u.T(), h_jac_x.T()});
+    casadi::MX h_jac_zt = jacobian(h_mx, z_mx).T();
+    casadi::MX u_x_mx = casadi::MX::vertcat(casadi::MXVector{u_mx, x_mx});
+    casadi::MX adj_ux = jtimes(h_mx, u_x_mx, lam_h, true);
+    casadi::MX hess_ux = jacobian(adj_ux, u_x_mx);
+    casadi::MX adj_z = jtimes(h_mx, z_mx, lam_h, true);
+    casadi::MX hess_z = jacobian(adj_z, z_mx);
+
+    // Set functions
+    casadi::Function nl_constr_h_fun_jac(
+        robot_model.name + "_constr_h_fun_jac_uxt_zt",
+        casadi::MXVector{x_mx, u_mx, z_mx, p_mx},
+        casadi::MXVector{h_mx, h_jac_uxt, h_jac_zt});
+    casadi::Function nl_constr_h_fun(robot_model.name + "_constr_h_fun",
+                                     casadi::MXVector{x_mx, u_mx, z_mx, p_mx},
+                                     casadi::MXVector{h_mx});
+    casadi::Function nl_constr_h_fun_jac_hess(
+        robot_model.name + "_constr_h_fun_jac_uxt_zt_hess",
+        casadi::MXVector{x_mx, u_mx, lam_h, z_mx, p_mx},
+        casadi::MXVector{h_mx, h_jac_uxt, hess_ux, h_jac_zt, hess_z});
+
+    // ---------------------------------------------------------------------
     // Evaluate a kinematics or dynamics function
     // ---------------------------------------------------------------------
     // Test a function with numerical values
@@ -229,6 +307,26 @@ int main() {
 
     std::cout << "RBDL result: " << casadi::DM(rbdl_res) << std::endl;
 
+    // Evaluate the esdf map
+    std::ofstream file;
+    file.open("map.csv");
+    for (double x = -1.5; x <= 2.5; x += 0.1)
+        for (double y = -2; y <= 2; y += 0.1) {
+            x_vec = {x,    y,     -0.52, 1.43, 0.243, 1.32,
+                     0.32, 1.386, 3.29,  2.10, 0.42};
+            file << x << ", " << y << ", ";
+            std::vector<double> h_fun = nl_constr_h_fun_jac(casadi::DMVector{
+                x_vec, u_vec, z_vec, p_vec})[0]
+                                            .get_elements();
+            for (int i = 0; i < h_fun.size(); i++) file << h_fun[i] << ", ";
+            std::vector<double> h_jac = nl_constr_h_fun_jac(casadi::DMVector{
+                x_vec, u_vec, z_vec, p_vec})[1]
+                                            .get_elements();
+            for (int i = 0; i < h_jac.size() - 1; i++) file << h_jac[i] << ", ";
+            file << h_jac[h_jac.size() - 1] << std::endl;
+        }
+    file.close();
+
     // ---------------------------------------------------------------------
     // Generate (or save) a function
     // ---------------------------------------------------------------------
@@ -240,4 +338,8 @@ int main() {
     mecali::generate_code(impl_dae_fun_jac_x_xdot_u,
                           impl_dae_fun_jac_x_xdot_u.name());
     mecali::generate_code(impl_dae_hess, impl_dae_hess.name());
+    mecali::generate_code(nl_constr_h_fun, nl_constr_h_fun.name());
+    mecali::generate_code(nl_constr_h_fun_jac, nl_constr_h_fun_jac.name());
+    mecali::generate_code(nl_constr_h_fun_jac_hess,
+                          nl_constr_h_fun_jac_hess.name());
 }

@@ -10,6 +10,7 @@ LIST(APPEND ${PROJECT_NAME}_SOURCES
     ${SRC_DIR}/functions/code_generation.cpp
     ${SRC_DIR}/functions/robot_expressions.cpp
     ${SRC_DIR}/robot_dynamics.cpp
+    ${SRC_DIR}/esdf_map.cpp
     )
 
 # include directories (as the -I flag in gcc)
