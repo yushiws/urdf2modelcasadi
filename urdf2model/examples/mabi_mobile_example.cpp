@@ -52,8 +52,8 @@ int main() {
     // ---------------------------------------------------------------------
     // Set functions for robot dynamics and kinematics
     // ---------------------------------------------------------------------
-    double wheel_radius = 0.15;
-    double wheel_distance = 0.58;
+    double wheel_radius = 0.075;
+    double wheel_distance = 0.61;
 
     // Define symbol
     casadi::SX x_sx = casadi::SX::sym("x", 4 + ARM_Q);
