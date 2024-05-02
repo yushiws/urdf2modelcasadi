@@ -54,6 +54,8 @@ int main() {
     // ---------------------------------------------------------------------
     double wheel_radius = 0.075;
     double wheel_distance = 0.6;
+    double a = 1.02;
+    double b = 0.585;
 
     // Define symbol
     casadi::SX x_sx = casadi::SX::sym("x", 4 + ARM_Q);
@@ -215,8 +217,26 @@ int main() {
     casadi::MX u_mx = casadi::MX::sym("u", 2 + ARM_Q);
     casadi::MX z_mx = casadi::MX::sym("z", 7);
     casadi::MX p_mx = casadi::MX::sym("p", 9);
-    casadi::MX lam_h = casadi::MX::sym("lam", 1);
-    casadi::MX h_mx = esdf_fun(x_mx(casadi::Slice(0, 2), 0))[0];
+    casadi::MX lam_h = casadi::MX::sym("lam", 5);
+
+    casadi::MX c_c = x_mx(casadi::Slice(0, 2), 0);
+    casadi::MX c_fl = casadi::MX::vertcat(casadi::MXVector{
+        x_mx(0, 0) + a / 2 * cos(x_mx(3, 0)) - b / 2 * sin(x_mx(3, 0)),
+        x_mx(1, 0) + a / 2 * sin(x_mx(3, 0)) + b / 2 * cos(x_mx(3, 0))});
+    casadi::MX c_fr = casadi::MX::vertcat(casadi::MXVector{
+        x_mx(0, 0) + a / 2 * cos(x_mx(3, 0)) + b / 2 * sin(x_mx(3, 0)),
+        x_mx(1, 0) + a / 2 * sin(x_mx(3, 0)) - b / 2 * cos(x_mx(3, 0))});
+    casadi::MX c_rl = casadi::MX::vertcat(casadi::MXVector{
+        x_mx(0, 0) - a / 2 * cos(x_mx(3, 0)) - b / 2 * sin(x_mx(3, 0)),
+        x_mx(1, 0) - a / 2 * sin(x_mx(3, 0)) + b / 2 * cos(x_mx(3, 0))});
+    casadi::MX c_rr = casadi::MX::vertcat(casadi::MXVector{
+        x_mx(0, 0) - a / 2 * cos(x_mx(3, 0)) + b / 2 * sin(x_mx(3, 0)),
+        x_mx(1, 0) - a / 2 * sin(x_mx(3, 0)) - b / 2 * cos(x_mx(3, 0))});
+
+    casadi::MX h_mx = casadi::MX::vertcat(casadi::MXVector{
+        esdf_fun(c_c)[0] - b / 2, esdf_fun(c_fl)[0], esdf_fun(c_fr)[0],
+        esdf_fun(c_rl)[0], esdf_fun(c_rr)[0]});
+
     casadi::MX h_jac_x = jacobian(h_mx, x_mx);
     casadi::MX h_jac_u = jacobian(h_mx, u_mx);
     casadi::MX h_jac_uxt =
