@@ -217,7 +217,7 @@ int main() {
     casadi::MX u_mx = casadi::MX::sym("u", 2 + ARM_Q);
     casadi::MX z_mx = casadi::MX::sym("z", 7);
     casadi::MX p_mx = casadi::MX::sym("p", 9);
-    casadi::MX lam_h = casadi::MX::sym("lam", 5);
+    casadi::MX lam_h = casadi::MX::sym("lam", 7);
 
     casadi::MX c_c = x_mx(casadi::Slice(0, 2), 0);
     casadi::MX c_fl = casadi::MX::vertcat(casadi::MXVector{
@@ -233,9 +233,21 @@ int main() {
         x_mx(0, 0) - a / 2 * cos(x_mx(3, 0)) + b / 2 * sin(x_mx(3, 0)),
         x_mx(1, 0) - a / 2 * sin(x_mx(3, 0)) - b / 2 * cos(x_mx(3, 0))});
 
+    casadi::Function fk_pos_4 =
+        robot_model.forward_kinematics("position", "link4");
+    casadi::Function fk_pos_7 =
+        robot_model.forward_kinematics("position", "link7");
+    casadi::MX x_mx_reorder = casadi::MX::vertcat(casadi::MXVector{
+        x_mx(casadi::Slice(0, 3), 0), 0, 0, sin(0.5 * x_mx(3, 0)),
+        cos(0.5 * x_mx(3, 0)), x_mx(casadi::Slice(4, 4 + ARM_Q), 0)});
+    casadi::MX pos_4 = fk_pos_4(casadi::MXVector{x_mx_reorder})[0];
+    casadi::MX pos_7 = fk_pos_7(casadi::MXVector{x_mx_reorder})[0];
+
     casadi::MX h_mx = casadi::MX::vertcat(casadi::MXVector{
         esdf_fun(c_c)[0] - b / 2, esdf_fun(c_fl)[0], esdf_fun(c_fr)[0],
-        esdf_fun(c_rl)[0], esdf_fun(c_rr)[0]});
+        esdf_fun(c_rl)[0], esdf_fun(c_rr)[0],
+        esdf_fun(pos_4(casadi::Slice(0, 2), 0))[0],
+        esdf_fun(pos_7(casadi::Slice(0, 2), 0))[0]});
 
     casadi::MX h_jac_x = jacobian(h_mx, x_mx);
     casadi::MX h_jac_u = jacobian(h_mx, u_mx);
@@ -265,7 +277,7 @@ int main() {
     // Evaluate a kinematics or dynamics function
     // ---------------------------------------------------------------------
     // Test a function with numerical values
-    std::vector<double> x_vec = {0.23, 0.354, -0.52, 1.43, 0.243, 1.32,
+    std::vector<double> x_vec = {0.0,  -0.3,  -0.52, 1.43, 0.243, 1.32,
                                  0.32, 1.386, 3.29,  2.10, 0.42};
     std::vector<double> xdot_vec = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     std::vector<double> u_vec = {54.23, -11.12, 2.43, 0.41, 1.37,
@@ -280,8 +292,8 @@ int main() {
     // Calculate by RBDL
     std::vector<double> rbdl_res;
     std::shared_ptr<robot_dynamics::RobotDynamics> robot_model_;
-    robot_model_.reset(
-        new robot_dynamics::RobotDynamics(urdf_filename, {"flange"}));
+    robot_model_.reset(new robot_dynamics::RobotDynamics(
+        urdf_filename, {"flange", "link4", "link7"}));
     robot_model_->Reset();
     Eigen::VectorXd joint(ARM_Q);
     joint << x_vec[4], x_vec[5], x_vec[6], x_vec[7], x_vec[8], x_vec[9],
@@ -327,20 +339,43 @@ int main() {
 
     std::cout << "RBDL result: " << casadi::DM(rbdl_res) << std::endl;
 
+    casadi::DM c_vec{x_vec[0], x_vec[1]};
+    casadi::DM fl_vec{x_vec[0] + a / 2 * cos(x_vec[3]) - b / 2 * sin(x_vec[3]),
+                      x_vec[1] + a / 2 * sin(x_vec[3]) + b / 2 * cos(x_vec[3])};
+    casadi::DM fr_vec{x_vec[0] + a / 2 * cos(x_vec[3]) + b / 2 * sin(x_vec[3]),
+                      x_vec[1] + a / 2 * sin(x_vec[3]) - b / 2 * cos(x_vec[3])};
+    casadi::DM rl_vec{x_vec[0] - a / 2 * cos(x_vec[3]) - b / 2 * sin(x_vec[3]),
+                      x_vec[1] - a / 2 * sin(x_vec[3]) + b / 2 * cos(x_vec[3])};
+    casadi::DM rr_vec{x_vec[0] - a / 2 * cos(x_vec[3]) + b / 2 * sin(x_vec[3]),
+                      x_vec[1] - a / 2 * sin(x_vec[3]) - b / 2 * cos(x_vec[3])};
+    casadi::DM l4_vec{robot_model_->EndEffectorPos(1)[0],
+                      robot_model_->EndEffectorPos(1)[1]};
+    casadi::DM l7_vec{robot_model_->EndEffectorPos(2)[0],
+                      robot_model_->EndEffectorPos(2)[1]};
+
+    casadi::DM h_res =
+        nl_constr_h_fun_jac(casadi::DMVector{x_vec, u_vec, z_vec, p_vec})[0];
+    std::cout << "Func result: " << h_res << std::endl;
+    std::cout << "RBDL result: [" << esdf_fun(c_vec)[0] - b / 2 << ", "
+              << esdf_fun(fl_vec)[0] << ", " << esdf_fun(fr_vec)[0] << ", "
+              << esdf_fun(rl_vec)[0] << ", " << esdf_fun(rr_vec)[0] << ", "
+              << esdf_fun(l4_vec)[0] << ", " << esdf_fun(l7_vec)[0] << "]"
+              << std::endl;
+
     // Evaluate the esdf map
     std::ofstream file;
     file.open("map.csv");
     for (double x = -1.5; x <= 2.5; x += 0.1)
         for (double y = -2; y <= 2; y += 0.1) {
-            x_vec = {x,    y,     -0.52, 1.43, 0.243, 1.32,
-                     0.32, 1.386, 3.29,  2.10, 0.42};
+            std::vector<double> x_tmp = {x,    y,     -0.52, 1.43, 0.243, 1.32,
+                                         0.32, 1.386, 3.29,  2.10, 0.42};
             file << x << ", " << y << ", ";
             std::vector<double> h_fun = nl_constr_h_fun_jac(casadi::DMVector{
-                x_vec, u_vec, z_vec, p_vec})[0]
+                x_tmp, u_vec, z_vec, p_vec})[0]
                                             .get_elements();
             for (int i = 0; i < h_fun.size(); i++) file << h_fun[i] << ", ";
             std::vector<double> h_jac = nl_constr_h_fun_jac(casadi::DMVector{
-                x_vec, u_vec, z_vec, p_vec})[1]
+                x_tmp, u_vec, z_vec, p_vec})[1]
                                             .get_elements();
             for (int i = 0; i < h_jac.size() - 1; i++) file << h_jac[i] << ", ";
             file << h_jac[h_jac.size() - 1] << std::endl;
