@@ -53,7 +53,7 @@ int main() {
     // Set functions for robot dynamics and kinematics
     // ---------------------------------------------------------------------
     double wheel_radius = 0.075;
-    double wheel_distance = 0.61;
+    double wheel_distance = 0.6;
 
     // Define symbol
     casadi::SX x_sx = casadi::SX::sym("x", 4 + ARM_Q);
@@ -178,11 +178,11 @@ int main() {
     Eigen::Vector2d pos;
     std::vector<std::pair<double, double>> vp;
     for (double y = -1.5; y <= -0.5; y += 0.01)
-        vp.push_back(std::make_pair(1, y));
+        vp.push_back(std::make_pair(0.9, y));
     for (double y = 0.5; y <= 1.5; y += 0.01)
-        vp.push_back(std::make_pair(1, y));
+        vp.push_back(std::make_pair(0.9, y));
     for (double l = 0; l <= 1; l += 0.01)
-        vp.push_back(std::make_pair(1 - 0.5 * sqrt(3) * l, 0.5 - 0.5 * l));
+        vp.push_back(std::make_pair(0.9 - 0.5 * sqrt(3) * l, 0.5 - 0.5 * l));
 
     // insert
     for (auto iter = vp.begin(); iter != vp.end(); iter++) {
