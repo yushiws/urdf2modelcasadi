@@ -218,7 +218,7 @@ int main() {
     casadi::MX u_mx = casadi::MX::sym("u", 2 + ARM_Q);
     casadi::MX z_mx = casadi::MX::sym("z", 7);
     casadi::MX p_mx = casadi::MX::sym("p", 9);
-    casadi::MX lam_h = casadi::MX::sym("lam", 5);
+    casadi::MX lam_h = casadi::MX::sym("lam", 9);
 
     casadi::MX c_c = x_mx(casadi::Slice(0, 2), 0);
     casadi::MX c_fl = casadi::MX::vertcat(casadi::MXVector{
@@ -233,11 +233,22 @@ int main() {
     casadi::MX c_rr = casadi::MX::vertcat(casadi::MXVector{
         x_mx(0, 0) - 0.35 * cos(x_mx(3, 0)) + 0.15 * sin(x_mx(3, 0)),
         x_mx(1, 0) - 0.35 * sin(x_mx(3, 0)) - 0.15 * cos(x_mx(3, 0))});
+    casadi::Function fk_pos_link = robot_model.forward_kinematics(
+        "position",
+        std::vector<std::string>{"link3", "link4", "link5", "link6"});
+    casadi::MX x_mx_reorder = casadi::MX::vertcat(casadi::MXVector{
+        x_mx(casadi::Slice(0, 3), 0), 0, 0, sin(0.5 * x_mx(3, 0)),
+        cos(0.5 * x_mx(3, 0)), x_mx(casadi::Slice(4, 4 + ARM_Q), 0)});
+    casadi::MXVector pos_link = fk_pos_link(casadi::MXVector{x_mx_reorder});
 
-    casadi::MX h_mx = casadi::MX::vertcat(
-        casadi::MXVector{esdf_fun(c_c)[0] - 0.4, esdf_fun(c_fl)[0] - 0.25,
-                         esdf_fun(c_fr)[0] - 0.25, esdf_fun(c_rl)[0] - 0.25,
-                         esdf_fun(c_rr)[0] - 0.25});
+    casadi::MX h_mx = casadi::MX::vertcat(casadi::MXVector{
+        esdf_fun(c_c)[0] - 0.4, esdf_fun(c_fl)[0] - 0.25,
+        esdf_fun(c_fr)[0] - 0.25, esdf_fun(c_rl)[0] - 0.25,
+        esdf_fun(c_rr)[0] - 0.25,
+        esdf_fun(pos_link[0](casadi::Slice(0, 2), 0))[0] - 0.1,
+        esdf_fun(pos_link[1](casadi::Slice(0, 2), 0))[0] - 0.1,
+        esdf_fun(pos_link[2](casadi::Slice(0, 2), 0))[0] - 0.1,
+        esdf_fun(pos_link[3](casadi::Slice(0, 2), 0))[0] - 0.1});
 
     casadi::MX h_jac_x = jacobian(h_mx, x_mx);
     casadi::MX h_jac_u = jacobian(h_mx, u_mx);
