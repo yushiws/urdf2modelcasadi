@@ -169,7 +169,7 @@ int main() {
     // Set functions for collision avoidance constraints
     // ---------------------------------------------------------------------
     Eigen::Vector2d origin, map_size;
-    origin << -1., -1.5;
+    origin << -2., -1.5;
     map_size << 3., 3.;
     double resolution = 0.01;
     fiesta::ESDFMap esdf_map(origin, resolution, map_size);
@@ -177,12 +177,15 @@ int main() {
     // set occupancy for some positions
     Eigen::Vector2d pos;
     std::vector<std::pair<double, double>> vp;
-    for (double y = -1.5; y <= -0.5; y += 0.01)
-        vp.push_back(std::make_pair(0.9, y));
-    for (double y = 0.5; y <= 1.5; y += 0.01)
-        vp.push_back(std::make_pair(0.9, y));
-    for (double l = 0; l <= 1; l += 0.01)
-        vp.push_back(std::make_pair(0.9 - 0.5 * sqrt(3) * l, 0.5 - 0.5 * l));
+    for (double x = 0; x <= 0.10001; x += 0.01) {
+        for (double y = -1.5; y <= -0.50001; y += 0.01)
+            vp.push_back(std::make_pair(x, y));
+        for (double y = 0.5; y <= 1.50001; y += 0.01)
+            vp.push_back(std::make_pair(x, y));
+    }
+    for (double l = 0; l <= 1.00001; l += 0.01)
+        vp.push_back(std::make_pair(0. - sin(M_PI / 180 * 75) * l,
+                                    0.5 - cos(M_PI / 180 * 75) * l));
 
     // insert
     for (auto iter = vp.begin(); iter != vp.end(); iter++) {
@@ -329,8 +332,8 @@ int main() {
     // Evaluate the esdf map
     std::ofstream file;
     file.open("map.csv");
-    for (double x = -1.5; x <= 2.5; x += 0.1)
-        for (double y = -2; y <= 2; y += 0.1) {
+    for (double x = -2; x <= 0.50001; x += 0.01)
+        for (double y = -1; y <= 1.00001; y += 0.01) {
             x_vec = {x,    y,     -0.52, 1.43, 0.243, 1.32,
                      0.32, 1.386, 3.29,  2.10, 0.42};
             file << x << ", " << y << ", ";
