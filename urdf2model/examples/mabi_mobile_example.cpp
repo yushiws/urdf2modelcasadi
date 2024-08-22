@@ -54,8 +54,6 @@ int main() {
     // ---------------------------------------------------------------------
     double wheel_radius = 0.075;
     double wheel_distance = 0.6;
-    double a = 1.02;
-    double b = 0.585;
 
     // Define symbol
     casadi::SX x_sx = casadi::SX::sym("x", 4 + ARM_Q);
@@ -221,21 +219,22 @@ int main() {
 
     casadi::MX c_c = x_mx(casadi::Slice(0, 2), 0);
     casadi::MX c_fl = casadi::MX::vertcat(casadi::MXVector{
-        x_mx(0, 0) + a / 2 * cos(x_mx(3, 0)) - b / 2 * sin(x_mx(3, 0)),
-        x_mx(1, 0) + a / 2 * sin(x_mx(3, 0)) + b / 2 * cos(x_mx(3, 0))});
+        x_mx(0, 0) + 0.35 * cos(x_mx(3, 0)) - 0.15 * sin(x_mx(3, 0)),
+        x_mx(1, 0) + 0.35 * sin(x_mx(3, 0)) + 0.15 * cos(x_mx(3, 0))});
     casadi::MX c_fr = casadi::MX::vertcat(casadi::MXVector{
-        x_mx(0, 0) + a / 2 * cos(x_mx(3, 0)) + b / 2 * sin(x_mx(3, 0)),
-        x_mx(1, 0) + a / 2 * sin(x_mx(3, 0)) - b / 2 * cos(x_mx(3, 0))});
+        x_mx(0, 0) + 0.35 * cos(x_mx(3, 0)) + 0.15 * sin(x_mx(3, 0)),
+        x_mx(1, 0) + 0.35 * sin(x_mx(3, 0)) - 0.15 * cos(x_mx(3, 0))});
     casadi::MX c_rl = casadi::MX::vertcat(casadi::MXVector{
-        x_mx(0, 0) - a / 2 * cos(x_mx(3, 0)) - b / 2 * sin(x_mx(3, 0)),
-        x_mx(1, 0) - a / 2 * sin(x_mx(3, 0)) + b / 2 * cos(x_mx(3, 0))});
+        x_mx(0, 0) - 0.35 * cos(x_mx(3, 0)) - 0.15 * sin(x_mx(3, 0)),
+        x_mx(1, 0) - 0.35 * sin(x_mx(3, 0)) + 0.15 * cos(x_mx(3, 0))});
     casadi::MX c_rr = casadi::MX::vertcat(casadi::MXVector{
-        x_mx(0, 0) - a / 2 * cos(x_mx(3, 0)) + b / 2 * sin(x_mx(3, 0)),
-        x_mx(1, 0) - a / 2 * sin(x_mx(3, 0)) - b / 2 * cos(x_mx(3, 0))});
+        x_mx(0, 0) - 0.35 * cos(x_mx(3, 0)) + 0.15 * sin(x_mx(3, 0)),
+        x_mx(1, 0) - 0.35 * sin(x_mx(3, 0)) - 0.15 * cos(x_mx(3, 0))});
 
     casadi::MX h_mx = casadi::MX::vertcat(casadi::MXVector{
-        esdf_fun(c_c)[0] - b / 2, esdf_fun(c_fl)[0], esdf_fun(c_fr)[0],
-        esdf_fun(c_rl)[0], esdf_fun(c_rr)[0]});
+        esdf_fun(c_c)[0] - 0.1 * sqrt(13), esdf_fun(c_fl)[0] - 0.15 * sqrt(2),
+        esdf_fun(c_fr)[0] - 0.15 * sqrt(2), esdf_fun(c_rl)[0] - 0.15 * sqrt(2),
+        esdf_fun(c_rr)[0] - 0.15 * sqrt(2)});
 
     casadi::MX h_jac_x = jacobian(h_mx, x_mx);
     casadi::MX h_jac_u = jacobian(h_mx, u_mx);
