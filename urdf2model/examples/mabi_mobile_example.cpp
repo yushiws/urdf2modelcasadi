@@ -234,10 +234,10 @@ int main() {
         x_mx(0, 0) - 0.35 * cos(x_mx(3, 0)) + 0.15 * sin(x_mx(3, 0)),
         x_mx(1, 0) - 0.35 * sin(x_mx(3, 0)) - 0.15 * cos(x_mx(3, 0))});
 
-    casadi::MX h_mx = casadi::MX::vertcat(casadi::MXVector{
-        esdf_fun(c_c)[0] - 0.1 * sqrt(13), esdf_fun(c_fl)[0] - 0.15 * sqrt(2),
-        esdf_fun(c_fr)[0] - 0.15 * sqrt(2), esdf_fun(c_rl)[0] - 0.15 * sqrt(2),
-        esdf_fun(c_rr)[0] - 0.15 * sqrt(2)});
+    casadi::MX h_mx = casadi::MX::vertcat(
+        casadi::MXVector{esdf_fun(c_c)[0] - 0.4, esdf_fun(c_fl)[0] - 0.25,
+                         esdf_fun(c_fr)[0] - 0.25, esdf_fun(c_rl)[0] - 0.25,
+                         esdf_fun(c_rr)[0] - 0.25});
 
     casadi::MX h_jac_x = jacobian(h_mx, x_mx);
     casadi::MX h_jac_u = jacobian(h_mx, u_mx);
