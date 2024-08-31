@@ -351,7 +351,7 @@
   <joint name="link7_to_flange" type="fixed">
     <parent link="link7"/>
     <child link="flange"/>
-    <origin xyz="0.0 0.0 0.124" rpy="0.0 0.0 -3.141592653589793"/>
+    <origin xyz="0.0 0.0 0.334" rpy="0.0 0.0 -3.141592653589793"/>
   </joint>
   <link name="flange">
   </link>
