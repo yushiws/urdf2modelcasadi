@@ -178,12 +178,12 @@ int main() {
     Eigen::Vector2d pos;
     std::vector<std::pair<double, double>> vp;
     for (double x = 0; x <= 0.10001; x += 0.01) {
-        for (double y = -1.5; y <= -0.50001; y += 0.01)
+        for (double y = -1.5; y <= -0.40001; y += 0.01)
             vp.push_back(std::make_pair(x, y));
         for (double y = 0.5; y <= 1.50001; y += 0.01)
             vp.push_back(std::make_pair(x, y));
     }
-    for (double l = 0; l <= 1.00001; l += 0.01)
+    for (double l = 0; l <= 0.90001; l += 0.01)
         vp.push_back(std::make_pair(0. - sin(M_PI / 180 * 75) * l,
                                     0.5 - cos(M_PI / 180 * 75) * l));
 
